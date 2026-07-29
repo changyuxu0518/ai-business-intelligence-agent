@@ -1,0 +1,85 @@
+sources:
+  - name: Google Cloud Blog
+    url: https://cloud.google.com/feeds/cloud-blog.xml
+    region: global
+    category: customer_stories
+    source_category: enterprise_case
+    source_priority: 1
+  - name: AWS Machine Learning Blog
+    url: https://aws.amazon.com/blogs/machine-learning/feed/
+    region: global
+    category: customer_stories
+    source_category: enterprise_case
+    source_priority: 1
+  - name: Microsoft Source
+    url: https://news.microsoft.com/source/feed/
+    region: global
+    category: customer_stories
+    source_category: enterprise_case
+    source_priority: 1
+  - name: Salesforce Blog
+    url: https://www.salesforce.com/blog/feed/
+    region: global
+    category: customer_stories
+    source_category: enterprise_case
+    source_priority: 1
+  - name: Adobe Blog
+    url: https://blog.adobe.com/en/publish/feeds/en.xml
+    region: global
+    category: customer_stories
+    source_category: enterprise_case
+    source_priority: 1
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    region: global
+    category: ai_application
+    source_category: ai_company
+    source_priority: 3
+  - name: The Verge AI
+    url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+    region: global
+    category: ai_application
+    source_category: ai_company
+    source_priority: 3
+  - name: Marketing Dive
+    url: https://www.marketingdive.com/feeds/news/
+    region: global
+    category: brand_marketing
+    source_category: enterprise_application
+    source_priority: 1
+  - name: Retail Dive
+    url: https://www.retaildive.com/feeds/news/
+    region: global
+    category: retail
+    source_category: enterprise_application
+    source_priority: 1
+  - name: Grocery Dive
+    url: https://www.grocerydive.com/feeds/news/
+    region: global
+    category: retail
+    source_category: enterprise_application
+    source_priority: 1
+  - name: CX Dive
+    url: https://www.customerexperiencedive.com/feeds/news/
+    region: global
+    category: enterprise
+    source_category: enterprise_application
+    source_priority: 1
+  - name: HR Dive
+    url: https://www.hrdive.com/feeds/news/
+    region: global
+    category: enterprise
+    source_category: industry_trend
+    source_priority: 2
+  - name: OpenAI Blog
+    url: https://openai.com/news/rss.xml
+    region: global
+    category: official_blog
+    source_category: ai_company
+    source_priority: 3
+  - name: 36kr
+    url: https://www.36kr.com/feed
+    region: china
+    category: business
+    source_category: industry_trend
+    source_priority: 2

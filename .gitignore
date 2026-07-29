@@ -1,0 +1,14 @@
+# Python virtual environments
+.venv/
+
+# Python bytecode and cache directories
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local environment configuration
+.env
+
+# Generated temporary output files
+outputs/*
+!outputs/.gitkeep
