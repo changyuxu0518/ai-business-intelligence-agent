@@ -3,7 +3,7 @@ name: Daily News Report
 on:
   schedule:
     # GitHub Actions cron uses UTC. 01:00 UTC = 09:00 Beijing time (UTC+8).
-    - cron: "0 1 * * *"
+    - cron: "5 1 * * *"
   workflow_dispatch:
 
 jobs:
