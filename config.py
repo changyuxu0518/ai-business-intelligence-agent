@@ -17,7 +17,7 @@ class Settings:
     model_name: str = os.getenv("MODEL_NAME", "gpt-4o-mini")
     max_llm_analysis_items: int = int(os.getenv("MAX_LLM_ANALYSIS_ITEMS", "5"))
     max_discovery_results: int = int(os.getenv("MAX_DISCOVERY_RESULTS", "10"))
-    max_daily_news_items: int = int(os.getenv("MAX_DAILY_NEWS_ITEMS", "5"))
+    max_daily_news_items: int = int(os.getenv("MAX_DAILY_NEWS_ITEMS", "3"))
     report_title: str = os.getenv("REPORT_TITLE", "AI Business Application Intelligence Report")
     preference_file: str = os.getenv("PREFERENCE_FILE", "outputs/preferences/user_preferences.json")
     feishu_webhook_url: str = os.getenv("FEISHU_WEBHOOK_URL", "")

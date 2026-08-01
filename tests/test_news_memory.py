@@ -4,7 +4,12 @@ import unittest
 from pathlib import Path
 
 from modules.delivery_logger import build_delivery_log
-from modules.news_memory import check_duplicate_news, load_news_memory, write_dedup_log
+from modules.news_memory import (
+    check_duplicate_news,
+    load_news_memory,
+    load_report_history,
+    write_dedup_log,
+)
 
 
 class FakeLLM:
@@ -41,6 +46,19 @@ class NewsMemoryTests(unittest.TestCase):
 
     def test_new_customer_adoption_is_kept(self):
         decision = check_duplicate_news(news_item("Meta AI advertising tools win first enterprise customer", "https://example.com/meta-customer"), self.memory, FakeLLM(False, "new customer adoption"))
+        self.assertFalse(decision["duplicate"])
+
+    def test_same_topic_with_new_event_stage_is_not_deterministically_removed(self):
+        historical = dict(self.memory[0], event_type="launch", topic_keywords="广告工具")
+        current = news_item(
+            "Meta adopts its AI advertising tools in a new workflow",
+            "https://example.com/meta-adoption",
+        )
+        current["analysis"]["event_type"] = "adoption"
+        current["analysis"]["topic_keywords"] = ["广告工具"]
+        decision = check_duplicate_news(
+            current, [historical], FakeLLM(False, "new lifecycle stage")
+        )
         self.assertFalse(decision["duplicate"])
 
     def test_missing_memory_file_is_initialized(self):
@@ -81,8 +99,59 @@ class NewsMemoryTests(unittest.TestCase):
 
     def test_delivery_log_contains_dedup_metrics(self):
         record = build_delivery_log(run_date="2026-07-29")
-        for key in ("fetched_items", "analyzed_items", "duplicates_removed", "final_selected", "memory_size"):
+        for key in ("fetched_items", "analyzed_items", "relevance_filtered_items", "low_quality_removed", "duplicates_removed", "final_selected", "memory_size"):
             self.assertIn(key, record)
+
+    def test_report_history_extracts_required_fingerprint_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "daily_report_2026-07-29.md"
+            report.write_text(
+                """# Report
+
+Date: 2026-07-29
+
+# 1. Klarna deploys AI customer service
+
+企业/品牌：Klarna
+
+分类：AI Enterprise
+
+## 发生了什么
+
+Klarna deployed an AI assistant for customer support.
+
+## AI改变了什么业务流程
+
+AI应用场景：AI客户服务
+""",
+                encoding="utf-8",
+            )
+            history = load_report_history(directory)
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0]["company"], "Klarna")
+            self.assertEqual(history[0]["event_type"], "deployment")
+            self.assertIn("客户服务", history[0]["topic_keywords"])
+
+    def test_report_history_duplicate_is_detected_without_llm(self):
+        historical = {
+            "title": "Klarna deploys AI customer service",
+            "company": "Klarna",
+            "event_type": "deployment",
+            "topic": "AI客户服务",
+            "topic_keywords": "klarna, 客户服务",
+            "url": "https://example.com/old",
+        }
+        current = news_item(
+            "Klarna deploys upgraded AI customer service",
+            "https://example.com/new",
+            company="Klarna",
+            topic="AI客户服务",
+        )
+        current["analysis"]["event_type"] = "deployment"
+        current["analysis"]["topic_keywords"] = ["Klarna", "客户服务"]
+        decision = check_duplicate_news(current, [historical], FakeLLM(False))
+        self.assertTrue(decision["duplicate"])
+        self.assertIn("highly similar", decision["reason"])
 
 
 if __name__ == "__main__":

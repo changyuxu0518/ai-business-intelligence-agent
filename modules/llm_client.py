@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from openai import OpenAI
+from modules.relevance_filter import infer_company_from_text
 
 
 CATEGORIES = {
@@ -52,6 +53,10 @@ class LLMClient:
         prompt = _build_prompt(news_item)
         raw_response = self._call_llm(prompt)
         analysis = _parse_analysis(raw_response)
+        if str(analysis.get("company", "")).strip().lower() in {"", "unknown", "未明确"}:
+            inferred_company = infer_company_from_text(news_item.get("title", ""), news_item.get("summary", ""))
+            if inferred_company:
+                analysis["company"] = inferred_company
         # RSS metadata is authoritative; do not depend on the model to reproduce it.
         analysis["title"] = news_item.get("title", "")
         analysis["source"] = news_item.get("source", "")
@@ -131,7 +136,7 @@ Analyze:
 Rules:
 - Use only the provided news fields.
 - Do not invent facts.
-- If a field cannot be supported by the provided news, use an empty string. Do not guess.
+- Do not invent factual claims or metrics. However, when a named company and AI business scenario are stated, provide a clearly framed qualitative business analysis based on the stated facts and general business logic. For example, AI customer service can change service-cost structure, response workflow, and customer operations; do not say "现有信息无法确认" merely because exact metrics are absent.
 - Copy title, source, and url exactly from the provided news fields.
 - Write every analysis field in Simplified Chinese. Keep company names and product names in their official language when appropriate.
 - Avoid technical detail dumping.
@@ -141,14 +146,19 @@ Rules:
 - importance_score must be an integer from 1 to 5.
 - ai_relevance_score must be an integer from 1 to 5: 5 = explicit AI application or business change; 4 = enterprise AI strategy/adoption; 3 = AI industry trend; 2 = weak AI connection; 1 = no AI connection.
 - company, industry, and category must be filled whenever the title or description identifies them. If a named company such as Amazon, Google, Microsoft, Meta, or Apple appears, use that name; use "unknown" only when no company can be identified.
+- When the headline starts with a named organization followed by an action (for example, "Abridge buys agentic AI company"), identify that organization as company even if the article does not identify the acquired company.
 - ai_application_area must name a concrete business use case in Chinese, not a generic technology label. Good examples: "AI广告素材生成", "AI客户服务", "AI购物搜索助手", "AI销售自动化", "AI内容生产".
+- ai_adoption_action must state the explicit action reported by the source, such as deploying, adopting, integrating, purchasing, or rolling out AI. Leave it empty if the source only discusses, funds, predicts, or invests in AI.
+- business_scenario must identify the concrete department, user task, or operating workflow where AI is used. Leave it empty when the source does not provide one.
+- event_type must be a short label such as adoption, deployment, integration, launch, acquisition, regulation, funding, stock_move, executive_change, or investment.
+- topic_keywords must contain 3-8 concise company, product, and workflow keywords copied or directly derived from the source.
 - before_ai and after_ai should describe workflows, costs, efficiency, or constraints; they must not make up metrics.
 - strategic_question must be a single decision-relevant question, not a statement.
 - why_now must explain the current trigger: technology maturity, cost pressure, consumer behavior, or competitive pressure.
 - business_model_impact must explain the mechanism of change in cost structure, workflow ownership, user experience, or competitive advantage. Do not use "improve efficiency", "reduce cost", or "optimize experience" as a standalone conclusion.
 - competitive_implication must state why peer companies should care.
 - product_opportunity must identify a user pain point and a workflow that can be redesigned; do not merely suggest "build an AI product".
-- Write business_model_impact with at least 100 Chinese characters and product_opportunity with at least 80 Chinese characters when the source provides enough evidence. If evidence is insufficient, state what is uncertain instead of inventing details.
+- Write business_model_impact with at least 100 Chinese characters and product_opportunity with at least 80 Chinese characters when the source provides enough evidence. Use conditional, qualitative reasoning for known workflows; state only the specific unknown fact when needed, rather than using generic "无法确认".
 - A model launch, benchmark, GPU/chip update, AI-company funding round, or technical architecture update without a clear enterprise use case should receive a low score and have empty business-analysis fields where the news provides no evidence.
 - An AI vendor's own model, feature, or product update is not a real enterprise application case unless the news shows a customer, brand, or non-AI business using it to change a workflow or customer experience. Score such vendor updates no higher than 3.
 
@@ -178,6 +188,10 @@ Return exactly this JSON schema:
   "company": "",
   "industry": "",
   "ai_application_area": "",
+  "ai_adoption_action": "",
+  "business_scenario": "",
+  "event_type": "",
+  "topic_keywords": [],
   "business_problem": "",
   "why_now": "",
   "before_ai": "",
@@ -241,6 +255,10 @@ def _parse_analysis(raw_response: str) -> dict[str, Any]:
         "company": str(parsed.get("company", "") or ""),
         "industry": str(parsed.get("industry", "") or ""),
         "ai_application_area": application_area,
+        "ai_adoption_action": str(parsed.get("ai_adoption_action", "") or ""),
+        "business_scenario": str(parsed.get("business_scenario", "") or ""),
+        "event_type": str(parsed.get("event_type", "") or ""),
+        "topic_keywords": _parse_keywords(parsed.get("topic_keywords")),
         "business_problem": str(parsed.get("business_problem", "") or ""),
         "why_now": str(parsed.get("why_now", "") or ""),
         "before_ai": str(parsed.get("before_ai", "") or ""),
@@ -290,6 +308,14 @@ def _parse_boolean(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes"}
 
 
+def _parse_keywords(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()][:8]
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()][:8]
+    return []
+
+
 def _error_analysis(message: str) -> dict[str, Any]:
     analysis = {
         "title": "",
@@ -298,6 +324,10 @@ def _error_analysis(message: str) -> dict[str, Any]:
         "company": "",
         "industry": "",
         "ai_application_area": "Other",
+        "ai_adoption_action": "",
+        "business_scenario": "",
+        "event_type": "",
+        "topic_keywords": [],
         "business_problem": "",
         "why_now": "",
         "before_ai": "",

@@ -28,7 +28,8 @@ LLM configuration:
 
 Ranking, report, and preference configuration:
 
-- `MAX_DAILY_NEWS_ITEMS`: final number of ranked items selected for the daily report, default `5`.
+- `MAX_DAILY_NEWS_ITEMS`: maximum qualified cases in the report, default `3`.
+  It is an upper bound only; the agent never adds weaker items to reach it.
 - `REPORT_TITLE`: Markdown report title, default `AI Business Trend Daily`.
 - `PREFERENCE_FILE`: user preference JSON path, default `outputs/preferences/user_preferences.json`.
 - `REPORT_OUTPUT_DIR`: historical report directory, default `outputs/reports`.
@@ -59,6 +60,8 @@ The script runs this pipeline:
 ```text
 RSS Fetch Layer
 ↓
+AI Relevance Filtering Layer
+↓
 LLM Analysis Layer
 ↓
 Historical Memory Deduplication Layer
@@ -66,6 +69,8 @@ Historical Memory Deduplication Layer
 User Preference Adjustment
 ↓
 News Ranking Layer
+↓
+Commercial AI Qualification Filter
 ↓
 Daily Report Generator
 ↓
@@ -75,6 +80,35 @@ Optional Feishu Delivery
 ↓
 Delivery Logging
 ```
+
+## AI Relevance Filtering
+
+The relevance gate runs before LLM business analysis. It filters generic market,
+stock-price, and finance coverage that has no AI business-application signal, so
+those articles neither consume analysis capacity nor dilute the daily report.
+
+Items scoring 3 or above are analyzed. Explicit enterprise AI workflows score
+higher; important AI model launches, regulation, and ecosystem changes are kept
+as `ai_industry` even when they are not enterprise application cases. The delivery
+log records both `relevance_filtered_items` and `low_quality_removed` for review.
+
+After ranking and before report generation, the final Commercial AI Qualification
+Filter requires a named enterprise or brand, a concrete AI application scenario,
+and a known business impact. Otherwise it is discarded rather than rendered with
+an "unknown", "Other", or "unable to confirm" placeholder. The report generator
+repeats this validation as a defensive boundary.
+
+The final count may be lower than `MAX_DAILY_NEWS_ITEMS`. Qualification rejects
+are written with `title`, `discard_reason`, and ranking `score` to:
+
+```text
+outputs/logs/commercial_ai_discard_log.json
+```
+
+Stock-price coverage, funding, executive changes, lock-up periods, company
+registrations, and generic AI-investment stories are removed unless the source
+also provides a complete, concrete AI application and demonstrated business
+impact.
 
 ## Scheduling
 
@@ -131,10 +165,11 @@ outputs/history/news_memory.json
 
 ## Historical Memory & Deduplication Monitoring
 
-The historical memory prevents the report from repeatedly sending different
-coverage of the same commercial event across multiple days. An exact URL match
-is removed immediately. For a known company, the LLM then compares the title,
-company, AI application scenario, and summary with historical entries. It keeps
+Deduplication reads both the JSON memory and every Markdown report under
+`outputs/reports/`. Archived reports are parsed into title, company, event type,
+topic, and topic-keyword fingerprints. An exact URL match is removed immediately;
+items from the same company are filtered when their topic/event fingerprints are
+highly similar, with an LLM comparison available for borderline semantic matches. It keeps
 meaningful lifecycle progress—such as a new customer, market, business result,
 product capability, or partner—and filters only unchanged event coverage.
 

@@ -1,6 +1,11 @@
 from datetime import date
+from pathlib import Path
 
 from config import settings
+from modules.commercial_ai_filter import (
+    filter_commercial_ai_news,
+    write_commercial_ai_discard_log,
+)
 from modules.delivery_logger import build_delivery_log, write_delivery_log
 from modules.case_verifier import verify_discovery_candidates
 from modules.discovery_search import build_discovery_stats, discover_enterprise_ai_cases
@@ -13,8 +18,18 @@ from modules.llm_client import (
     generate_executive_summary,
 )
 from modules.news_ranker import rank_news, summarize_ranked_news
-from modules.news_memory import add_news_to_memory, check_duplicate_news, load_news_memory, write_dedup_log
+from modules.news_memory import (
+    add_news_to_memory,
+    check_duplicate_news,
+    load_news_memory,
+    load_report_history,
+    write_dedup_log,
+)
 from modules.preference_store import load_preferences
+from modules.relevance_filter import (
+    filter_relevant_news,
+    select_daily_news,
+)
 from modules.report_generator import (
     build_daily_report_path,
     generate_daily_report,
@@ -82,7 +97,10 @@ def main() -> None:
         for index, case in enumerate(rss_stats["top_enterprise_ai_cases"][:5], start=1):
             print(f"{index}. company: {case['company']} | AI application: {case['title']}")
 
-        selected_items = news_items[: settings.max_llm_analysis_items]
+        fetched_count = len(news_items)
+        relevant_items = filter_relevant_news(news_items)
+        relevance_filtered_count = fetched_count - len(relevant_items)
+        selected_items = relevant_items[: settings.max_llm_analysis_items]
         try:
             llm_client = LLMClient(
                 api_key=settings.openai_api_key,
@@ -99,11 +117,13 @@ def main() -> None:
         analysis_results = analyze_news_items(selected_items, llm_client)
         _classify_analyzed_candidates(analysis_results)
         news_memory = load_news_memory(settings.news_memory_path, settings.news_memory_days)
+        report_history = load_report_history(settings.report_output_dir)
+        dedup_history = news_memory + report_history
         deduplicated_results = []
         duplicate_count = 0
         duplicate_results = []
         for item in analysis_results:
-            duplicate_decision = check_duplicate_news(item, news_memory, llm_client)
+            duplicate_decision = check_duplicate_news(item, dedup_history, llm_client)
             if duplicate_decision["duplicate"]:
                 duplicate_count += 1
                 duplicate_results.append({"item": item, "decision": duplicate_decision})
@@ -113,7 +133,17 @@ def main() -> None:
         dedup_log_path = write_dedup_log(duplicate_results)
 
         ranked_results = rank_news(deduplicated_results, preferences)
-        top_results = ranked_results[: settings.max_daily_news_items]
+        quality_checked_results, commercial_ai_discards = filter_commercial_ai_news(
+            ranked_results, preferences
+        )
+        commercial_ai_discard_log_path = write_commercial_ai_discard_log(
+            commercial_ai_discards,
+            str(Path(settings.log_output_dir) / "commercial_ai_discard_log.json"),
+        )
+        low_quality_removed = len(commercial_ai_discards)
+        top_results = select_daily_news(
+            quality_checked_results, settings.max_daily_news_items
+        )
         executive_summary = generate_executive_summary(top_results, llm_client)
 
         analysis_output_path = write_json(analysis_results, "outputs/analysis_results.json")
@@ -153,18 +183,21 @@ def main() -> None:
             report_path=report_output_path,
             ranked_news_path=ranked_output_path,
             analysis_results_path=analysis_output_path,
-            fetched_items=len(news_items),
+            fetched_items=fetched_count,
             analyzed_items=len(analysis_results),
+            relevance_filtered_items=relevance_filtered_count,
+            low_quality_removed=low_quality_removed,
             duplicates_removed=duplicate_count,
             final_selected=len(top_results),
             memory_size=len(updated_memory),
         )
         log_paths = write_delivery_log(log_record, settings.log_output_dir)
 
-        print(f"Fetched items: {len(news_items)}")
-        print(f"Analyzed items: {len(analysis_results)}")
+        print(f"Fetched: {fetched_count}")
+        print(f"Relevance passed: {len(relevant_items)}")
+        print(f"Low quality removed: {low_quality_removed}")
         print(f"Duplicates removed: {duplicate_count}")
-        print(f"Selected items: {len(top_results)}")
+        print(f"Final selected: {len(top_results)}")
         print(f"Memory size: {len(updated_memory)}")
         print(f"Saved analysis results to {analysis_output_path}.")
         print(f"Saved RSS quality stats to {rss_stats_path}.")
@@ -172,6 +205,7 @@ def main() -> None:
         print(f"Saved daily report to {report_output_path}.")
         print(f"Saved delivery log to {log_paths['latest']}.")
         print(f"Saved dedup log to {dedup_log_path}.")
+        print(f"Saved Commercial AI discard log to {commercial_ai_discard_log_path}.")
         if feishu_sent:
             print("Delivery status: sent")
         elif feishu_result.get("skipped"):
@@ -186,15 +220,26 @@ def main() -> None:
 
 
 def _classify_analyzed_candidates(results: list[dict]) -> None:
-    """Use AI relevance to classify and rank, never to discard business context."""
+    """Classify only explicit adoption cases as enterprise applications."""
     for item in results:
         analysis = item.get("analysis", {})
         news = item.get("news", {})
         relevance = int(analysis.get("ai_relevance_score", 1))
         company = str(analysis.get("company", "")).strip().lower()
-        has_application = bool(analysis.get("ai_application_area"))
-        has_workflow_change = bool(analysis.get("after_ai") or analysis.get("business_problem"))
-        if relevance >= 3 and company not in {"", "unknown", "未明确"} and has_application and has_workflow_change:
+        has_adoption = bool(str(analysis.get("ai_adoption_action", "")).strip())
+        has_scenario = bool(
+            str(
+                analysis.get("business_scenario")
+                or analysis.get("ai_application_area")
+                or ""
+            ).strip()
+        )
+        if (
+            relevance >= 3
+            and company not in {"", "unknown", "未明确"}
+            and has_adoption
+            and has_scenario
+        ):
             news["candidate_category"] = "enterprise_application"
         elif relevance >= 3:
             news["candidate_category"] = "ai_industry"

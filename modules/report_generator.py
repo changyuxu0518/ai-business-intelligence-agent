@@ -5,6 +5,13 @@ from pathlib import Path
 import re
 from typing import Any
 
+from modules.commercial_ai_filter import (
+    commercial_ai_application,
+    commercial_ai_business_impact,
+    commercial_ai_company,
+    is_commercial_ai_qualified,
+)
+
 
 def generate_daily_report(
     ranked_results: list[dict[str, Any]],
@@ -12,6 +19,10 @@ def generate_daily_report(
     report_title: str = "AI Business Trend Daily",
     report_date: date | None = None,
 ) -> str:
+    # Keep the renderer safe even when called outside the main pipeline.
+    ranked_results = [item for item in ranked_results if is_commercial_ai_qualified(item)]
+    if not ranked_results:
+        executive_summary = "今日未发现值得重点关注的 AI 商业应用趋势。"
     current_date = report_date or date.today()
     lines = [
         f"# {report_title}",
@@ -30,7 +41,6 @@ def generate_daily_report(
         sections = [
             ("## 今日AI商业应用案例", "enterprise_application"),
             ("## AI行业关键动态", "ai_industry"),
-            ("## 商业趋势观察", "business_trend"),
         ]
         index = 1
         for heading, category in sections:
@@ -70,17 +80,16 @@ def _render_news_item(index: int, item: dict[str, Any]) -> list[str]:
     url = _text(analysis.get("url")) or _text(news.get("url"))
     category = _text(analysis.get("category")) or "其他"
     what_happened = _safe_text(_text(news.get("description")) or _text(analysis.get("summary")) or "新闻未提供足够事实描述。")
-    company = _safe_text(_text(analysis.get("company")) or "unknown")
+    company = _safe_text(commercial_ai_company(item))
     industry = _text(analysis.get("industry")) or "未明确"
-    ai_application = _text(analysis.get("ai_application_area")) or "现有信息无法确认。"
-    business_problem = _text(analysis.get("business_problem")) or "现有信息无法确认。"
+    ai_application = commercial_ai_application(item)
+    business_problem = _text(analysis.get("business_problem"))
     why_now = _text(analysis.get("why_now")) or "现有信息未充分说明这一变化的直接触发因素。"
-    before_ai = _text(analysis.get("before_ai")) or "现有信息无法确认。"
-    after_ai = _text(analysis.get("after_ai")) or "现有信息无法确认。"
-    user_impact = _text(analysis.get("user_behavior_change")) or "现有信息无法确认。"
-    business_impact = _text(analysis.get("business_model_impact")) or _text(analysis.get("business_impact")) or "现有信息无法确认。"
+    before_ai = _text(analysis.get("before_ai"))
+    after_ai = _text(analysis.get("after_ai"))
+    business_impact = commercial_ai_business_impact(item)
     competitive_implication = _text(analysis.get("competitive_implication")) or "同行应持续观察该变化是否重塑客户预期、流程标准或竞争门槛。"
-    product_opportunity = _text(analysis.get("product_opportunity")) or _text(analysis.get("takeaway")) or "现有信息无法确认。"
+    product_opportunity = _text(analysis.get("product_opportunity")) or _text(analysis.get("takeaway"))
     strategic_question = _text(analysis.get("strategic_question")) or "需要哪些证据，才能证明该 AI 应用创造了可持续的商业价值？"
 
     source_line = f"来源：[{source}]({url})" if url else f"来源：{source}"

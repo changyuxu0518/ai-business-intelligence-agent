@@ -9,9 +9,16 @@ def rank_news(
 ) -> list[dict[str, Any]]:
     return sorted(
         analysis_results,
-        key=lambda item: _final_score(item, preferences or {}),
+        key=lambda item: score_news(item, preferences),
         reverse=True,
     )
+
+
+def score_news(
+    item: dict[str, Any], preferences: dict[str, Any] | None = None
+) -> int:
+    """Return the same final score used for ranking and audit logs."""
+    return _final_score(item, preferences or {})
 
 
 def summarize_ranked_news(ranked_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -78,6 +85,8 @@ def _application_priority(item: dict[str, Any]) -> int:
         score += 1
     if analysis.get("business_model_impact") or analysis.get("product_opportunity"):
         score += 1
+    if str(analysis.get("company", "")).strip().lower() in {"", "unknown", "未明确"}:
+        score -= 2
 
     technical_text = " ".join(
         [str(news.get("title", "")), str(news.get("description", ""))]
