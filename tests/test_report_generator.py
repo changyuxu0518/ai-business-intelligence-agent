@@ -57,6 +57,22 @@ class ReportGeneratorTests(unittest.TestCase):
         self.assertNotIn("Unknown company deploys AI", report)
         self.assertNotIn("企业/品牌：unknown", report)
 
+    def test_selected_business_trend_fallback_is_rendered(self):
+        item = {
+            "news": {
+                "title": "AI changes software buying",
+                "candidate_category": "business_trend",
+            },
+            "analysis": {},
+            "commercial_ai_status": "discard",
+            "commercial_ai_reason": ["missing_or_unknown_company"],
+            "evidence_score": 0.0,
+            "selected_as_fallback": True,
+        }
+        report = generate_daily_report([item], "fallback摘要")
+        self.assertIn("## AI商业趋势", report)
+        self.assertIn("AI changes software buying", report)
+
 
 if __name__ == "__main__":
     unittest.main()

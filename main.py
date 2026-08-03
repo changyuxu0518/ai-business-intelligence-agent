@@ -3,6 +3,7 @@ from pathlib import Path
 
 from config import settings
 from modules.commercial_ai_filter import (
+    classify_commercial_ai_item,
     filter_commercial_ai_news,
     write_commercial_ai_discard_log,
 )
@@ -116,6 +117,8 @@ def main() -> None:
         preferences = load_preferences(settings.preference_file)
         analysis_results = analyze_news_items(selected_items, llm_client)
         _classify_analyzed_candidates(analysis_results)
+        for item in analysis_results:
+            classify_commercial_ai_item(item)
         news_memory = load_news_memory(settings.news_memory_path, settings.news_memory_days)
         report_history = load_report_history(settings.report_output_dir)
         dedup_history = news_memory + report_history
@@ -133,7 +136,7 @@ def main() -> None:
         dedup_log_path = write_dedup_log(duplicate_results)
 
         ranked_results = rank_news(deduplicated_results, preferences)
-        quality_checked_results, commercial_ai_discards = filter_commercial_ai_news(
+        confirmed_results, potential_results, commercial_ai_discards = filter_commercial_ai_news(
             ranked_results, preferences
         )
         commercial_ai_discard_log_path = write_commercial_ai_discard_log(
@@ -142,7 +145,13 @@ def main() -> None:
         )
         low_quality_removed = len(commercial_ai_discards)
         top_results = select_daily_news(
-            quality_checked_results, settings.max_daily_news_items
+            confirmed_results=confirmed_results,
+            potential_results=potential_results,
+            fallback_ranked_results=ranked_results,
+            max_items=settings.max_daily_news_items,
+            confirmed_limit=3,
+            potential_limit=2,
+            fallback_items=3,
         )
         executive_summary = generate_executive_summary(top_results, llm_client)
 

@@ -1,5 +1,6 @@
 import unittest
 
+from modules.commercial_ai_filter import filter_commercial_ai_news
 from modules.relevance_filter import (
     evaluate_ai_relevance,
     filter_low_quality_results,
@@ -67,23 +68,38 @@ class RelevanceFilterTests(unittest.TestCase):
         }
         self.assertEqual(filter_low_quality_results([item]), [])
 
-    def test_daily_limit_does_not_backfill_or_apply_category_quotas(self):
-        def item(category, rank):
-            return {"news": {"candidate_category": category}, "rank": rank}
+    def test_empty_commercial_results_fall_back_to_three_ranked_items(self):
+        ranked = [self._ranked_item("ai_industry", rank) for rank in range(1, 5)]
+        confirmed, potential, discarded = filter_commercial_ai_news(ranked)
+        self.assertEqual(len(discarded), 4)
+        selected = select_daily_news(confirmed, potential, ranked, max_items=5)
+        self.assertEqual([entry["rank"] for entry in selected], [1, 2, 3])
+        self.assertTrue(all(entry["selected_as_fallback"] for entry in selected))
 
+    def test_fallback_prioritizes_business_relevant_categories(self):
         ranked = [
-            item("enterprise_application", 1),
-            item("enterprise_application", 2),
-            item("enterprise_application", 3),
-            item("ai_industry", 4),
-            item("ai_industry", 5),
-            item("business_trend", 6),
+            self._ranked_item("ai_industry", 1),
+            self._ranked_item("business_trend", 2),
+            self._ranked_item("enterprise_application", 3),
+            self._ranked_item("ai_industry", 4),
         ]
-        selected = select_daily_news(ranked, 5)
-        self.assertEqual([entry["rank"] for entry in selected], [1, 2, 3, 4, 5])
+        selected = select_daily_news([], [], ranked, max_items=5)
+        self.assertEqual([entry["rank"] for entry in selected], [2, 3, 1])
 
-        only_two_qualified = select_daily_news(ranked[:2], 5)
-        self.assertEqual([entry["rank"] for entry in only_two_qualified], [1, 2])
+    def test_confirmed_and_potential_limits_are_enforced(self):
+        confirmed = [self._ranked_item("enterprise_application", rank) for rank in range(1, 6)]
+        potential = [self._ranked_item("business_trend", rank) for rank in range(6, 10)]
+        selected = select_daily_news(
+            confirmed,
+            potential,
+            confirmed + potential,
+            max_items=5,
+        )
+        self.assertEqual([entry["rank"] for entry in selected], [1, 2, 3, 6, 7])
+
+    @staticmethod
+    def _ranked_item(category, rank):
+        return {"news": {"candidate_category": category}, "rank": rank}
 
     def test_model_launch_is_kept_as_industry_news(self):
         items = [{"title": "New foundation model launch", "summary": "AI model release", "source": "Example"}]

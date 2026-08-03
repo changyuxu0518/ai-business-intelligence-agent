@@ -24,11 +24,11 @@ LLM configuration:
 
 - `OPENAI_API_KEY`: required for LLM analysis.
 - `MODEL_NAME`: OpenAI model name, default `gpt-4o-mini`.
-- `MAX_LLM_ANALYSIS_ITEMS`: maximum number of RSS items sent to the LLM, default `5`.
+- `MAX_LLM_ANALYSIS_ITEMS`: maximum number of RSS items sent to the LLM, default `10`.
 
 Ranking, report, and preference configuration:
 
-- `MAX_DAILY_NEWS_ITEMS`: maximum qualified cases in the report, default `3`.
+- `MAX_DAILY_NEWS_ITEMS`: maximum selected cases in the report, default `5`.
   It is an upper bound only; the agent never adds weaker items to reach it.
 - `REPORT_TITLE`: Markdown report title, default `AI Business Trend Daily`.
 - `PREFERENCE_FILE`: user preference JSON path, default `outputs/preferences/user_preferences.json`.
@@ -92,14 +92,17 @@ higher; important AI model launches, regulation, and ecosystem changes are kept
 as `ai_industry` even when they are not enterprise application cases. The delivery
 log records both `relevance_filtered_items` and `low_quality_removed` for review.
 
-After ranking and before report generation, the final Commercial AI Qualification
-Filter requires a named enterprise or brand, a concrete AI application scenario,
-and a known business impact. Otherwise it is discarded rather than rendered with
-an "unknown", "Other", or "unable to confirm" placeholder. The report generator
-repeats this validation as a defensive boundary.
+After ranking and before report generation, the Commercial AI classifier assigns
+`confirmed`, `potential`, or `discard` from three deterministic evidence signals:
+a named enterprise or brand, a concrete AI application scenario, and a known
+business impact. `evidence_score` is rule-evidence completeness, not a model
+probability. Each `commercial_ai_reason` is stored as a list of evidence codes.
 
-The final count may be lower than `MAX_DAILY_NEWS_ITEMS`. Qualification rejects
-are written with `title`, `discard_reason`, and ranking `score` to:
+The report selects at most three confirmed cases, then at most two potential
+cases. If both groups are empty, it falls back to three ranked items while
+prioritizing `business_trend` and `enterprise_application`. All classification
+rejects remain observable with `title`, `commercial_ai_status`,
+`commercial_ai_reason`, `evidence_score`, and ranking `score` in:
 
 ```text
 outputs/logs/commercial_ai_discard_log.json

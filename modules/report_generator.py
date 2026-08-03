@@ -19,8 +19,9 @@ def generate_daily_report(
     report_title: str = "AI Business Trend Daily",
     report_date: date | None = None,
 ) -> str:
-    # Keep the renderer safe even when called outside the main pipeline.
-    ranked_results = [item for item in ranked_results if is_commercial_ai_qualified(item)]
+    # Keep direct callers safe while allowing classified potential and explicit
+    # empty-result fallback items selected by the main pipeline.
+    ranked_results = [item for item in ranked_results if _is_reportable_item(item)]
     if not ranked_results:
         executive_summary = "今日未发现值得重点关注的 AI 商业应用趋势。"
     current_date = report_date or date.today()
@@ -40,6 +41,7 @@ def generate_daily_report(
     else:
         sections = [
             ("## 今日AI商业应用案例", "enterprise_application"),
+            ("## AI商业趋势", "business_trend"),
             ("## AI行业关键动态", "ai_industry"),
         ]
         index = 1
@@ -153,6 +155,15 @@ def _render_key_takeaways(ranked_results: list[dict[str, Any]]) -> list[str]:
     if not takeaways:
         return ["- 持续关注企业 AI 应用是否带来可衡量的业务、产品或市场行为变化。"]
     return takeaways
+
+
+def _is_reportable_item(item: dict[str, Any]) -> bool:
+    status = str(item.get("commercial_ai_status", ""))
+    if status in {"confirmed", "potential"}:
+        return True
+    if item.get("selected_as_fallback") is True:
+        return True
+    return is_commercial_ai_qualified(item)
 
 
 def _text(value: Any) -> str:

@@ -33,6 +33,9 @@ def summarize_ranked_news(ranked_results: list[dict[str, Any]]) -> list[dict[str
                 "importance_score": _importance_score(item),
                 "business_impact": str(analysis.get("business_impact", "")),
                 "takeaway": str(analysis.get("takeaway", "")),
+                "commercial_ai_status": str(item.get("commercial_ai_status", "")),
+                "commercial_ai_reason": list(item.get("commercial_ai_reason", [])),
+                "evidence_score": item.get("evidence_score", 0.0),
             }
         )
     return summaries

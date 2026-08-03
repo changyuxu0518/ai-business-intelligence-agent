@@ -152,11 +152,43 @@ def is_low_value_news(item: dict[str, Any]) -> bool:
 
 
 def select_daily_news(
-    ranked_results: list[dict[str, Any]], max_items: int = 3
+    confirmed_results: list[dict[str, Any]],
+    potential_results: list[dict[str, Any]],
+    fallback_ranked_results: list[dict[str, Any]],
+    max_items: int = 5,
+    confirmed_limit: int = 3,
+    potential_limit: int = 2,
+    fallback_items: int = 3,
 ) -> list[dict[str, Any]]:
-    """Apply only an upper bound; never backfill or enforce a target count."""
+    """Select confirmed, then potential, with a business-relevant empty-result fallback."""
     limit = max(0, int(max_items))
-    return ranked_results[:limit]
+    confirmed_count = min(limit, max(0, int(confirmed_limit)))
+    selected = confirmed_results[:confirmed_count]
+
+    remaining = limit - len(selected)
+    potential_count = min(remaining, max(0, int(potential_limit)))
+    selected.extend(potential_results[:potential_count])
+    if selected:
+        return selected
+
+    fallback_limit = min(limit, max(0, int(fallback_items)))
+    preferred_categories = {"business_trend", "enterprise_application"}
+    preferred = [
+        item
+        for item in fallback_ranked_results
+        if str(item.get("news", {}).get("candidate_category", ""))
+        in preferred_categories
+    ]
+    remaining_ranked = [
+        item
+        for item in fallback_ranked_results
+        if str(item.get("news", {}).get("candidate_category", ""))
+        not in preferred_categories
+    ]
+    fallback = (preferred + remaining_ranked)[:fallback_limit]
+    for item in fallback:
+        item["selected_as_fallback"] = True
+    return fallback
 
 
 def _meaningful(value: Any) -> bool:

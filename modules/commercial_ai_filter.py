@@ -48,6 +48,10 @@ GENERIC_AI_APPLICATIONS = {
     "生成式人工智能",
 }
 
+COMPANY_EVIDENCE_WEIGHT = 0.25
+APPLICATION_EVIDENCE_WEIGHT = 0.40
+IMPACT_EVIDENCE_WEIGHT = 0.35
+
 
 def commercial_ai_discard_reasons(item: dict[str, Any]) -> list[str]:
     """Explain why an analyzed item is not safe to publish as a commercial AI case."""
@@ -72,6 +76,48 @@ def commercial_ai_discard_reasons(item: dict[str, Any]) -> list[str]:
 def is_commercial_ai_qualified(item: dict[str, Any]) -> bool:
     """Return true only for a named, concrete, commercially meaningful AI case."""
     return not commercial_ai_discard_reasons(item)
+
+
+def classify_commercial_ai_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Attach a deterministic commercial-AI evidence classification to an item."""
+    company = commercial_ai_company(item)
+    application = commercial_ai_application(item)
+    impact = commercial_ai_business_impact(item)
+    has_company = _is_meaningful(company)
+    has_application = _is_concrete_ai_application(application)
+    has_impact = _is_meaningful(impact)
+
+    reasons = [
+        "named_company" if has_company else "missing_or_unknown_company",
+        (
+            "concrete_ai_application"
+            if has_application
+            else "missing_or_generic_ai_application"
+        ),
+        (
+            "demonstrated_business_impact"
+            if has_impact
+            else "missing_or_unknown_business_impact"
+        ),
+    ]
+    evidence_score = round(
+        (COMPANY_EVIDENCE_WEIGHT if has_company else 0.0)
+        + (APPLICATION_EVIDENCE_WEIGHT if has_application else 0.0)
+        + (IMPACT_EVIDENCE_WEIGHT if has_impact else 0.0),
+        2,
+    )
+
+    if has_company and has_application and has_impact:
+        status = "confirmed"
+    elif has_application and (has_company or has_impact):
+        status = "potential"
+    else:
+        status = "discard"
+
+    item["commercial_ai_status"] = status
+    item["commercial_ai_reason"] = reasons
+    item["evidence_score"] = evidence_score
+    return item
 
 
 def commercial_ai_company(item: dict[str, Any]) -> str:
@@ -104,25 +150,32 @@ def commercial_ai_business_impact(item: dict[str, Any]) -> str:
 def filter_commercial_ai_news(
     ranked_results: list[dict[str, Any]],
     preferences: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Keep qualified cases in rank order and return structured discard records."""
-    qualified = []
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify ranked items while preserving their order and all discard records."""
+    confirmed = []
+    potential = []
     discarded = []
     for item in ranked_results:
-        reasons = commercial_ai_discard_reasons(item)
-        if not reasons:
-            qualified.append(item)
+        classify_commercial_ai_item(item)
+        status = item["commercial_ai_status"]
+        if status == "confirmed":
+            confirmed.append(item)
+            continue
+        if status == "potential":
+            potential.append(item)
             continue
         news = item.get("news", {})
         analysis = item.get("analysis", {})
         discarded.append(
             {
                 "title": str(news.get("title") or analysis.get("title") or ""),
-                "discard_reason": "; ".join(reasons),
+                "commercial_ai_status": status,
+                "commercial_ai_reason": list(item["commercial_ai_reason"]),
+                "evidence_score": item["evidence_score"],
                 "score": score_news(item, preferences),
             }
         )
-    return qualified, discarded
+    return confirmed, potential, discarded
 
 
 def write_commercial_ai_discard_log(
